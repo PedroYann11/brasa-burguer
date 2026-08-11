@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/**
+ * Paleta em canais RGB para permitir opacidade no Tailwind (bg-ink/60).
+ * Trocar estes 6 valores troca a identidade visual inteira — é exatamente
+ * o que o painel administrativo vai fazer no futuro.
+ */
+:root {
+  --c-ink: 20 10 12;
+  --c-coal: 30 17 19;
+  --c-ember: 255 90 31;
+  --c-mustard: 232 179 60;
+  --c-bone: 243 235 227;
+  --c-ash: 184 171 165;
+  /* Só para elementos decorativos e estados desabilitados — NUNCA texto. */
+  --c-ash-dim: 122 110 106;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* A hero é sticky: o scroll de âncora precisa parar abaixo da navbar. */
+    scroll-padding-top: 5rem;
+  }
+
+  body {
+    @apply bg-ink font-sans text-bone antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    @apply bg-ember text-ink;
+  }
+
+  /* Foco visível e consistente em todo o site. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ember ring-offset-2 ring-offset-ink;
+  }
+
+  /* Acessibilidade: quem pede menos movimento recebe menos movimento.
+     GSAP e Framer Motion também checam esta preferência via matchMedia. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* Etiqueta de comanda de cozinha — dispositivo estrutural do projeto.
+     Usada como eyebrow de cada seção para marcar hierarquia. */
+  .ticket-label {
+    /* 12px com tracking menor: maiúsculas muito espaçadas em corpo pequeno
+       derrubam a legibilidade mesmo com contraste aprovado. */
+    @apply font-mono text-xs uppercase tracking-[0.18em] text-ash;
+  }
+}
