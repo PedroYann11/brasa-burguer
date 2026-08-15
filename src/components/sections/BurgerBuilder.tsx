@@ -14,9 +14,20 @@ import { useCarrinho } from "@/context/carrinho";
  * MONTE SEU HAMBÚRGUER — bancada interativa.
  *
  * Não é formulário: nenhum checkbox, select ou lista de marcar. A bancada
- * começa vazia e os ingredientes ficam ao redor, agrupados por função
+ * começa vazia e os ingredientes ficam organizados em blocos por família
  * (pão, carne, queijo, extras). Tocar em um faz a peça voar até a pilha,
- * girar, assentar e soltar faíscas — e o hambúrguer ganha altura de verdade.
+ * assentar e soltar faíscas — e o hambúrguer ganha altura de verdade.
+ * Tocar de novo num ingrediente já usado remove só aquela peça (sem
+ * precisar limpar a bancada inteira).
+ *
+ * ESTRUTURA EM BLOCOS (accordion): cada família é uma linha fechada, com
+ * o resumo da escolha já visível ("Carne — Blend 180g"). Tocar na linha
+ * abre só as opções daquela família — as outras ficam fechadas. Isso
+ * substitui a lista longa e "espremida" que existia antes: no celular,
+ * mostrar as quatro famílias abertas ao mesmo tempo empurrava o
+ * hambúrguer pra fora de tela e obrigava a subir e descer a página toda
+ * hora. Com blocos, cabe tudo numa tela só e o cliente sempre sabe em
+ * qual família está.
  *
  * Regras dos grupos vêm de `site.builder.grupos`:
  *   pão    -> escolha única, troca a peça de baixo e de cima
@@ -25,8 +36,9 @@ import { useCarrinho } from "@/context/carrinho";
  *   extras -> até 4 camadas
  *
  * Comportamento das peças: queijo escorre, bacon ondula, carne solta fumaça.
- * Quando os grupos obrigatórios estão atendidos, o hambúrguer gira devagar
- * e o botão de adicionar ao carrinho aparece.
+ * O desenho do hambúrguer fica parado — só as peças que se empilham é que
+ * animam. Quando os grupos obrigatórios estão atendidos, o botão de
+ * adicionar ao carrinho aparece.
  */
 
 /** Altura visual da base do pão de baixo (px) — onde a pilha começa. */
@@ -43,6 +55,8 @@ export function BurgerBuilder() {
   const [pao, setPao] = useState<Ingrediente>(grupoPao.opcoes[0]);
   const [camadas, setCamadas] = useState<Camada[]>([]);
   const [ultimo, setUltimo] = useState<{ chave: string; bottom: number } | null>(null);
+  /** Família aberta no momento (accordion: só uma por vez). Começa no pão. */
+  const [aberto, setAberto] = useState<string | null>(grupos[0]?.id ?? null);
 
   /** Grupos obrigatórios (carne e queijo) precisam de ao menos uma camada. */
   const completo = grupos
@@ -66,7 +80,26 @@ export function BurgerBuilder() {
 
   const contaGrupo = (id: string) => camadas.filter((c) => c.grupo === id).length;
 
-  const adicionarCamada = (ing: Ingrediente, grupoId: string, max: number) => {
+  /** Abre a próxima família da lista (usado depois de escolher o pão, pra guiar o fluxo). */
+  const abrirProximo = (grupoId: string) => {
+    const idx = grupos.findIndex((g) => g.id === grupoId);
+    setAberto(grupos[idx + 1]?.id ?? null);
+  };
+
+  /**
+   * Toca em um ingrediente: se ele já está na pilha, remove essa camada
+   * (o "desfazer" pedido pelo cliente); se não está, adiciona — respeitando
+   * o teto do grupo. Cada ingrediente vira um toggle, não um contador.
+   */
+  const alternarIngrediente = (ing: Ingrediente, grupoId: string, max: number) => {
+    const existente = camadas.find((c) => c.grupo === grupoId && c.ing.id === ing.id);
+
+    if (existente) {
+      setCamadas((atual) => atual.filter((c) => c.chave !== existente.chave));
+      setUltimo(null);
+      return;
+    }
+
     if (contaGrupo(grupoId) >= max) return;
     const chave = `${ing.id}-${Date.now()}`;
     let acc = BASE;
@@ -85,6 +118,7 @@ export function BurgerBuilder() {
     });
     setCamadas([]);
     setUltimo(null);
+    setAberto(grupos[0]?.id ?? null);
     abrir(true);
   };
 
@@ -101,23 +135,11 @@ export function BurgerBuilder() {
           </header>
         </Reveal>
 
-        <div className="mt-14 grid gap-12 lg:grid-cols-12 lg:gap-10">
+        <div className="mt-14 grid gap-10 lg:grid-cols-12 lg:gap-10">
           {/* ——— BANCADA ——— */}
           <div className="lg:col-span-6 lg:order-2">
-            <div
-              className="relative flex min-h-[420px] items-end justify-center lg:sticky lg:top-28"
-              style={{ perspective: 1200 }}
-            >
-              <motion.div
-                className="relative h-[360px] w-[290px] sm:w-[330px]"
-                animate={completo && !reduced ? { rotateY: 360 } : { rotateY: 0 }}
-                transition={
-                  completo && !reduced
-                    ? { duration: 18, repeat: Infinity, ease: "linear" }
-                    : { duration: 0.6 }
-                }
-                style={{ transformStyle: "preserve-3d" }}
-              >
+            <div className="relative flex min-h-[300px] items-end justify-center lg:min-h-[420px] lg:sticky lg:top-28">
+              <div className="relative h-[360px] w-[290px] overflow-x-clip sm:w-[330px]">
                 {/* sombra de contato */}
                 <div
                   className="absolute bottom-1 left-1/2 h-5 w-[86%] -translate-x-1/2 rounded-[50%] bg-ink/80 blur-lg"
@@ -180,71 +202,130 @@ export function BurgerBuilder() {
                 </motion.div>
 
                 {ultimo ? <Sparks key={ultimo.chave} bottom={ultimo.bottom} /> : null}
-              </motion.div>
+              </div>
             </div>
           </div>
 
-          {/* ——— ESCOLHAS ——— */}
+          {/* ——— ESCOLHAS (blocos por família) ——— */}
           <div className="lg:col-span-5 lg:order-1">
-            <div className="space-y-9">
+            <div className="divide-y divide-bone/10 border-y border-bone/10">
               {grupos.map((g) => {
                 const usados = contaGrupo(g.id);
                 const cheio = g.id !== "pao" && usados >= (g.max ?? 99);
+                const usadosIds = new Set(
+                  camadas.filter((c) => c.grupo === g.id).map((c) => c.ing.id),
+                );
+                const estaAberto = aberto === g.id;
+                const resumo =
+                  g.id === "pao"
+                    ? pao.nome
+                    : camadas
+                        .filter((c) => c.grupo === g.id)
+                        .map((c) => c.ing.nome)
+                        .join(", ") || "Toque para escolher";
 
                 return (
                   <div key={g.id}>
-                    <div className="flex items-baseline justify-between border-b border-bone/10 pb-3">
-                      <p className="ticket-label">{g.titulo}</p>
-                      <p className="font-mono text-xs text-ash">
-                        {g.id === "pao"
-                          ? pao.nome
-                          : `${usados}/${g.max} ${g.obrigatorio ? "· obrigatório" : ""}`}
-                      </p>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAberto(estaAberto ? null : g.id)}
+                      aria-expanded={estaAberto}
+                      className="flex w-full items-center justify-between gap-4 py-5 text-left"
+                    >
+                      <span className="min-w-0">
+                        <span className="ticket-label block">{g.titulo}</span>
+                        <span className="mt-1 block truncate text-sm text-bone/90">{resumo}</span>
+                      </span>
 
-                    <div className="mt-4 flex flex-wrap gap-2.5">
-                      {g.opcoes.map((op) => {
-                        const ativo = g.id === "pao" && pao.id === op.id;
-                        const bloqueado = g.id !== "pao" && cheio;
+                      <span className="flex shrink-0 items-center gap-3">
+                        {g.id !== "pao" ? (
+                          <span className="font-mono text-xs text-ash">
+                            {usados}/{g.max}
+                            {g.obrigatorio ? " · obrigatório" : ""}
+                          </span>
+                        ) : null}
+                        <svg
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          aria-hidden
+                          className={`h-4 w-4 text-ash transition-transform duration-300 ease-soft ${
+                            estaAberto ? "rotate-180" : ""
+                          }`}
+                        >
+                          <path
+                            d="M5 7.5L10 12.5L15 7.5"
+                            stroke="currentColor"
+                            strokeWidth="1.6"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                    </button>
 
-                        return (
-                          <button
-                            key={op.id}
-                            type="button"
-                            disabled={bloqueado}
-                            onClick={() =>
-                              g.id === "pao"
-                                ? setPao(op)
-                                : adicionarCamada(op, g.id, g.max ?? 99)
-                            }
-                            className={`flex items-center gap-2.5 rounded-full border px-4 py-2.5 text-sm transition-all duration-300 ease-soft ${
-                              ativo
-                                ? "border-ember bg-ember/10 text-bone"
-                                : bloqueado
-                                  ? "border-bone/5 text-ash-dim"
-                                  : "border-bone/20 text-bone hover:border-ember/60 hover:bg-ember/5"
-                            }`}
-                          >
-                            <span
-                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                                ativo ? "bg-ember" : bloqueado ? "bg-ash-dim" : "bg-ember/60"
-                              }`}
-                            />
-                            {op.nome}
-                            {op.preco > 0 ? (
-                              <span className="font-mono text-xs text-ash">+{op.preco}</span>
-                            ) : null}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <AnimatePresence initial={false}>
+                      {estaAberto ? (
+                        <motion.div
+                          initial={reduced ? false : { height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+                          className="overflow-hidden"
+                        >
+                          <div className="flex flex-wrap gap-2.5 pb-6">
+                            {g.opcoes.map((op) => {
+                              const ativo = g.id === "pao" ? pao.id === op.id : usadosIds.has(op.id);
+                              const bloqueado = g.id !== "pao" && cheio && !ativo;
+                              const removivel = ativo && g.id !== "pao";
+
+                              return (
+                                <button
+                                  key={op.id}
+                                  type="button"
+                                  disabled={bloqueado}
+                                  aria-pressed={ativo}
+                                  title={removivel ? `Toque para remover ${op.nome}` : undefined}
+                                  onClick={() => {
+                                    if (g.id === "pao") {
+                                      setPao(op);
+                                      abrirProximo(g.id);
+                                    } else {
+                                      alternarIngrediente(op, g.id, g.max ?? 99);
+                                    }
+                                  }}
+                                  className={`flex items-center gap-2.5 rounded-full border px-4 py-2.5 text-sm transition-all duration-300 ease-soft ${
+                                    ativo
+                                      ? "border-ember bg-ember/10 text-bone"
+                                      : bloqueado
+                                        ? "border-bone/5 text-ash-dim"
+                                        : "border-bone/20 text-bone hover:border-ember/60 hover:bg-ember/5"
+                                  }`}
+                                >
+                                  <span
+                                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                      ativo ? "bg-ember" : bloqueado ? "bg-ash-dim" : "bg-ember/60"
+                                    }`}
+                                  />
+                                  {op.nome}
+                                  {removivel ? (
+                                    <span className="font-mono text-xs text-ember/80">remover</span>
+                                  ) : op.preco > 0 ? (
+                                    <span className="font-mono text-xs text-ash">+{op.preco}</span>
+                                  ) : null}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
                   </div>
                 );
               })}
             </div>
 
             {/* ——— COMANDA ——— */}
-            <div className="mt-10 border-t border-bone/10 pt-7">
+            <div className="mt-8 border-b border-bone/10 pb-7">
               <div className="flex items-end justify-between gap-6">
                 <div>
                   <p className="ticket-label">
