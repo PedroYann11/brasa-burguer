@@ -20,14 +20,12 @@ import { useCarrinho } from "@/context/carrinho";
  * Tocar de novo num ingrediente já usado remove só aquela peça (sem
  * precisar limpar a bancada inteira).
  *
- * ESTRUTURA EM BLOCOS (accordion): cada família é uma linha fechada, com
- * o resumo da escolha já visível ("Carne — Blend 180g"). Tocar na linha
- * abre só as opções daquela família — as outras ficam fechadas. Isso
- * substitui a lista longa e "espremida" que existia antes: no celular,
- * mostrar as quatro famílias abertas ao mesmo tempo empurrava o
- * hambúrguer pra fora de tela e obrigava a subir e descer a página toda
- * hora. Com blocos, cabe tudo numa tela só e o cliente sempre sabe em
- * qual família está.
+ * SELETOR DE FAMÍLIA (abas): Pão, Carne, Queijo e Extras ficam numa linha
+ * de abas curtas — 2 colunas no celular (pão+carne em cima, queijo+extras
+ * embaixo) e as 4 numa linha só a partir de `sm`. Tocar numa aba abre um
+ * painel único com as opções daquela família; só um painel fica aberto por
+ * vez, então a página nunca cresce mais do que "abas + um painel" — o
+ * hambúrguer continua por perto mesmo quando o cliente chega em "Extras".
  *
  * Regras dos grupos vêm de `site.builder.grupos`:
  *   pão    -> escolha única, troca a peça de baixo e de cima
@@ -55,7 +53,7 @@ export function BurgerBuilder() {
   const [pao, setPao] = useState<Ingrediente>(grupoPao.opcoes[0]);
   const [camadas, setCamadas] = useState<Camada[]>([]);
   const [ultimo, setUltimo] = useState<{ chave: string; bottom: number } | null>(null);
-  /** Família aberta no momento (accordion: só uma por vez). Começa no pão. */
+  /** Família com o painel aberto no momento (só uma por vez). Começa no pão. */
   const [aberto, setAberto] = useState<string | null>(grupos[0]?.id ?? null);
 
   /** Grupos obrigatórios (carne e queijo) precisam de ao menos uma camada. */
@@ -122,6 +120,8 @@ export function BurgerBuilder() {
     abrir(true);
   };
 
+  const grupoAberto = grupos.find((g) => g.id === aberto) ?? null;
+
   return (
     <section id="monte" className="scroll-mt-24 py-24 md:py-32">
       <Container>
@@ -135,7 +135,16 @@ export function BurgerBuilder() {
           </header>
         </Reveal>
 
-        <div className="mt-14 grid gap-10 lg:grid-cols-12 lg:gap-10">
+        {/*
+          `flex flex-col` (não `grid` puro) abaixo de `lg`: um grid sem
+          colunas explícitas cria uma única coluna implícita cuja largura é
+          "auto" — se algum texto lá dentro não puder quebrar linha (ex.: o
+          resumo de vários extras selecionados, tudo numa string só), essa
+          coluna cresce pra caber o conteúdo e empurra a página inteira pra
+          o lado. `flex` não tem esse problema: os itens sempre respeitam a
+          largura do contêiner.
+        */}
+        <div className="mt-14 flex flex-col gap-10 lg:grid lg:grid-cols-12 lg:gap-10">
           {/* ——— BANCADA ——— */}
           <div className="lg:col-span-6 lg:order-2">
             <div className="relative flex min-h-[300px] items-end justify-center lg:min-h-[420px] lg:sticky lg:top-28">
@@ -206,126 +215,124 @@ export function BurgerBuilder() {
             </div>
           </div>
 
-          {/* ——— ESCOLHAS (blocos por família) ——— */}
+          {/* ——— ESCOLHAS (abas por família + painel único) ——— */}
           <div className="lg:col-span-5 lg:order-1">
-            <div className="divide-y divide-bone/10 border-y border-bone/10">
+            {/* 2 colunas no celular (pão+carne em cima, queijo+extras
+                embaixo); 4 numa linha só a partir de `sm` — testado: com
+                nome + contador, 4 numa linha espreme demais abaixo disso. */}
+            <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
               {grupos.map((g) => {
                 const usados = contaGrupo(g.id);
-                const cheio = g.id !== "pao" && usados >= (g.max ?? 99);
-                const usadosIds = new Set(
-                  camadas.filter((c) => c.grupo === g.id).map((c) => c.ing.id),
-                );
+                const feito = g.id === "pao" ? true : usados > 0;
                 const estaAberto = aberto === g.id;
-                const resumo =
-                  g.id === "pao"
-                    ? pao.nome
-                    : camadas
-                        .filter((c) => c.grupo === g.id)
-                        .map((c) => c.ing.nome)
-                        .join(", ") || "Toque para escolher";
 
                 return (
-                  <div key={g.id}>
-                    <button
-                      type="button"
-                      onClick={() => setAberto(estaAberto ? null : g.id)}
-                      aria-expanded={estaAberto}
-                      className="flex w-full items-center justify-between gap-4 py-5 text-left"
-                    >
-                      <span className="min-w-0">
-                        <span className="ticket-label block">{g.titulo}</span>
-                        <span className="mt-1 block truncate text-sm text-bone/90">{resumo}</span>
-                      </span>
-
-                      <span className="flex shrink-0 items-center gap-3">
-                        {g.id !== "pao" ? (
-                          <span className="font-mono text-xs text-ash">
-                            {usados}/{g.max}
-                            {g.obrigatorio ? " · obrigatório" : ""}
-                          </span>
-                        ) : null}
-                        <svg
-                          viewBox="0 0 20 20"
-                          fill="none"
-                          aria-hidden
-                          className={`h-4 w-4 text-ash transition-transform duration-300 ease-soft ${
-                            estaAberto ? "rotate-180" : ""
-                          }`}
-                        >
-                          <path
-                            d="M5 7.5L10 12.5L15 7.5"
-                            stroke="currentColor"
-                            strokeWidth="1.6"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </span>
-                    </button>
-
-                    <AnimatePresence initial={false}>
-                      {estaAberto ? (
-                        <motion.div
-                          initial={reduced ? false : { height: 0, opacity: 0 }}
-                          animate={{ height: "auto", opacity: 1 }}
-                          exit={{ height: 0, opacity: 0 }}
-                          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-                          className="overflow-hidden"
-                        >
-                          <div className="flex flex-wrap gap-2.5 pb-6">
-                            {g.opcoes.map((op) => {
-                              const ativo = g.id === "pao" ? pao.id === op.id : usadosIds.has(op.id);
-                              const bloqueado = g.id !== "pao" && cheio && !ativo;
-                              const removivel = ativo && g.id !== "pao";
-
-                              return (
-                                <button
-                                  key={op.id}
-                                  type="button"
-                                  disabled={bloqueado}
-                                  aria-pressed={ativo}
-                                  title={removivel ? `Toque para remover ${op.nome}` : undefined}
-                                  onClick={() => {
-                                    if (g.id === "pao") {
-                                      setPao(op);
-                                      abrirProximo(g.id);
-                                    } else {
-                                      alternarIngrediente(op, g.id, g.max ?? 99);
-                                    }
-                                  }}
-                                  className={`flex items-center gap-2.5 rounded-full border px-4 py-2.5 text-sm transition-all duration-300 ease-soft ${
-                                    ativo
-                                      ? "border-ember bg-ember/10 text-bone"
-                                      : bloqueado
-                                        ? "border-bone/5 text-ash-dim"
-                                        : "border-bone/20 text-bone hover:border-ember/60 hover:bg-ember/5"
-                                  }`}
-                                >
-                                  <span
-                                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                                      ativo ? "bg-ember" : bloqueado ? "bg-ash-dim" : "bg-ember/60"
-                                    }`}
-                                  />
-                                  {op.nome}
-                                  {removivel ? (
-                                    <span className="font-mono text-xs text-ember/80">remover</span>
-                                  ) : op.preco > 0 ? (
-                                    <span className="font-mono text-xs text-ash">+{op.preco}</span>
-                                  ) : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </motion.div>
-                      ) : null}
-                    </AnimatePresence>
-                  </div>
+                  <button
+                    key={g.id}
+                    type="button"
+                    onClick={() => setAberto(estaAberto ? null : g.id)}
+                    aria-expanded={estaAberto}
+                    className={`flex flex-col items-center gap-1.5 rounded-2xl border px-3 py-3.5 text-center transition-all duration-300 ease-soft ${
+                      estaAberto
+                        ? "border-ember bg-ember/10 text-bone"
+                        : "border-bone/15 text-bone/80 hover:border-ember/50 hover:text-bone"
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5 text-sm font-medium">
+                      <span
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          feito ? "bg-ember" : "bg-ash-dim"
+                        }`}
+                      />
+                      {g.titulo}
+                    </span>
+                    <span className="font-mono text-[0.6875rem] text-ash">
+                      {g.id === "pao" ? pao.nome : `${usados}/${g.max}`}
+                    </span>
+                  </button>
                 );
               })}
             </div>
 
+            {/* painel da família ativa — só um por vez, então a página não
+                fica mais alta conforme o cliente navega entre famílias.
+                `key={grupoAberto.id}` força a remontagem ao trocar de
+                família, então o próprio React já troca o conteúdo — sem
+                depender do `exit` do AnimatePresence, que em teste ficava
+                preso na família anterior (mode="wait" nunca completava a
+                saída) e deixava o painel errado na tela. */}
+            {grupoAberto ? (
+              <motion.div
+                key={grupoAberto.id}
+                initial={reduced ? false : { opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                className="mt-5 rounded-2xl border border-bone/10 bg-bone/[0.03] p-4"
+              >
+                  <div className="flex items-baseline justify-between gap-3 pb-1">
+                    <p className="ticket-label">{grupoAberto.titulo}</p>
+                    {grupoAberto.id !== "pao" ? (
+                      <p className="font-mono text-xs text-ash">
+                        {contaGrupo(grupoAberto.id)}/{grupoAberto.max}
+                        {grupoAberto.obrigatorio ? " · obrigatório" : ""}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2.5">
+                    {grupoAberto.opcoes.map((op) => {
+                      const usadosIds = new Set(
+                        camadas.filter((c) => c.grupo === grupoAberto.id).map((c) => c.ing.id),
+                      );
+                      const ativo = grupoAberto.id === "pao" ? pao.id === op.id : usadosIds.has(op.id);
+                      const cheio =
+                        grupoAberto.id !== "pao" && contaGrupo(grupoAberto.id) >= (grupoAberto.max ?? 99);
+                      const bloqueado = grupoAberto.id !== "pao" && cheio && !ativo;
+                      const removivel = ativo && grupoAberto.id !== "pao";
+
+                      return (
+                        <button
+                          key={op.id}
+                          type="button"
+                          disabled={bloqueado}
+                          aria-pressed={ativo}
+                          title={removivel ? `Toque para remover ${op.nome}` : undefined}
+                          onClick={() => {
+                            if (grupoAberto.id === "pao") {
+                              setPao(op);
+                              abrirProximo(grupoAberto.id);
+                            } else {
+                              alternarIngrediente(op, grupoAberto.id, grupoAberto.max ?? 99);
+                            }
+                          }}
+                          className={`flex items-center gap-2.5 rounded-full border px-4 py-2.5 text-sm transition-all duration-300 ease-soft ${
+                            ativo
+                              ? "border-ember bg-ember/10 text-bone"
+                              : bloqueado
+                                ? "border-bone/5 text-ash-dim"
+                                : "border-bone/20 text-bone hover:border-ember/60 hover:bg-ember/5"
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                              ativo ? "bg-ember" : bloqueado ? "bg-ash-dim" : "bg-ember/60"
+                            }`}
+                          />
+                          {op.nome}
+                          {removivel ? (
+                            <span className="font-mono text-xs text-ember/80">remover</span>
+                          ) : op.preco > 0 ? (
+                            <span className="font-mono text-xs text-ash">+{op.preco}</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              ) : null}
+
             {/* ——— COMANDA ——— */}
-            <div className="mt-8 border-b border-bone/10 pb-7">
+            <div className="mt-8 border-t border-bone/10 pt-7">
               <div className="flex items-end justify-between gap-6">
                 <div>
                   <p className="ticket-label">
